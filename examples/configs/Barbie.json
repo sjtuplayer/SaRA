@@ -1,0 +1,8 @@
+{
+    "dataset_name": "dataset/finetune-dataset/Barbie",
+    "prefix_name": "Barbie style, ",
+    "train_batch_size": 4,
+    "validation_iter": 500,
+    "max_train_steps": 5005,
+    "checkpointing_steps":500
+}
