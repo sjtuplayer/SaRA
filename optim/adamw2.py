@@ -77,6 +77,8 @@ class AdamW(Optimizer):
                  weight_decay=1e-2, amsgrad=False, *, maximize: bool = False,
                  foreach: Optional[bool] = None,
                  capturable: bool = False):
+        if lr is None:
+            lr=1e-3*math.exp(-350*threshhold)
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -88,8 +90,7 @@ class AdamW(Optimizer):
         if not 0.0 <= weight_decay:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
         self.threshold=threshhold
-        if lr is None:
-            lr=1e-3*math.exp(-350*threshhold)
+
         self.initial_lr=lr
         self.lambda_rank=lambda_rank
         self.progressive_iter=progressive_iter
@@ -129,7 +130,6 @@ class AdamW(Optimizer):
             if self.inner_iter==0:   #log only when the starting iteration
                 if len(param.shape)==2 and min(param.shape)>64:
                     self.low_rank_ids.append(idx)
-                    # print(idx,param.shape)
         return param_mask_groups
 
     @torch.no_grad()
