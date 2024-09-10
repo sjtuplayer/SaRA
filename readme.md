@@ -1,4 +1,4 @@
-# SaRA: High-Efficient Diffusion Model Fine-tuning with Progressive Sparse Low-Rank Adaptation}
+# SaRA: High-Efficient Diffusion Model Fine-tuning with Progressive Sparse Low-Rank Adaptation
 ###  [Paper](https://arxiv.org/abs/2404.15789) | [Project Page](https://sjtuplayer.github.io/projects/SaRA/)
 <!-- <br> -->
 [Teng Hu](https://github.com/sjtuplayer), 
