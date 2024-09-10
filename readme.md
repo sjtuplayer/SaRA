@@ -47,7 +47,7 @@ torch.save(optimizer.save_params(),$path_to_save)
 
 #### 📖 Datasets
 
-For the downstream dataset fine-tuning task, we employ five dataset, including BarbieCore, CyberPunk, ElementFire, Expedition, and Hornify([Google Drive](https://drive.google.com/file/d/1iaUUBX8TnvBLMenUMyxMya8O0Oa4BlU4/view?usp=drive_link)).
+For the downstream dataset fine-tuning task, we employ five dataset, including BarbieCore, CyberPunk, ElementFire, Expedition, and Hornify ([Google Drive](https://drive.google.com/file/d/1iaUUBX8TnvBLMenUMyxMya8O0Oa4BlU4/view?usp=drive_link)).
 Each dataset is structured as:
 ```
 dataset_name
@@ -60,7 +60,7 @@ where ```metadata.jsonl``` contains the prompts (captioned by BLIP) for each ima
 
 
 #### 🚀Fine-tuning on downstream dataset
-Put the downloaded datasets in ```Example/dataset```
+Put the downloaded datasets in ```Example/dataset```, and then run:
 
 ```
 cd Examples
