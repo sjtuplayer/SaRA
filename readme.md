@@ -76,26 +76,10 @@ python3 finetune.py \
 
 #### 🚀Fine-tuning Dreambooth
 
-```
-python3 finetune.py \
-   --config=configs/Barbie.json \
-   --output_dir=$path_to_save \
-   --sd_version=1.5 \
-   --threshold=2e-3 \
-   --lr_scheduler=cosine \
-   --progresive_iter=2500 \
-   --lambda_rank=0.0005\
-```
+Coming Soon
 
 #### 🚀Fine-tuning Animatediff
 
-```
-python3 finetune.py \
-   --config=configs/Barbie.json \
-   --output_dir=$path_to_save \
-   --sd_version=1.5 \
-   --threshold=2e-3 \
-   --lr_scheduler=cosine \
-   --progresive_iter=2500 \
-   --lambda_rank=0.0005\
-```
+Coming Soon
+
+
