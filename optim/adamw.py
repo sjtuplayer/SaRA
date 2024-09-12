@@ -90,12 +90,12 @@ class AdamW(Optimizer):
     """
 
     def __init__(self, model, lr=None, betas=(0.9, 0.999), eps=1e-8,
-                 threshhold=100,progressive_iter=-1,lambda_rank=0,
+                 threshold=100,progressive_iter=-1,lambda_rank=0,
                  weight_decay=1e-2, amsgrad=False, *, maximize: bool = False,
                  foreach: Optional[bool] = None,
                  capturable: bool = False):
         if lr is None:
-            lr=1e-3*math.exp(-350*threshhold)
+            lr=1e-3*math.exp(-350*threshold)
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -110,17 +110,18 @@ class AdamW(Optimizer):
                         weight_decay=weight_decay, amsgrad=amsgrad,
                         foreach=foreach, maximize=maximize, capturable=capturable)
         params=list(model.parameters())
+        self.source_params = params
         self.names=[]
         for name, module in model.named_parameters():
             self.names.append(name)
+        self.threshold=threshold
         self.inner_iter=0
         self.lambda_rank=lambda_rank
         self.low_rank_ids=[]
         self.progressive_iter=progressive_iter
         self.convert_parameters_to_tensors(model)
         self.model=model
-        self.source_params=params
-        trainable_params,param_mask_groups=self.set_mask_param(threshhold)
+        trainable_params,param_mask_groups=self.set_mask_param(threshold)
         self.param_mask_groups=param_mask_groups
         for i,param in enumerate(self.source_params):
             value=Sparse.apply(param.detach(),trainable_params[i].abs(),self.param_mask_groups[i])
@@ -163,11 +164,7 @@ class AdamW(Optimizer):
 
     @torch.no_grad()
     def update_params(self, threshhold):
-        self.param_mask_groups_adaptive = self.set_mask_param(threshhold)
-        trainable_params = []
-        for idx in range(len(self.param_mask_groups_adaptive)):
-            trainable_param = self.param[idx][self.param_mask_groups_adaptive[idx]].clone().detach().requires_grad_(True)
-            trainable_params.append(trainable_param)
+        trainable_params,self.param_mask_groups_adaptive = self.set_mask_param(threshhold)
         return trainable_params
 
     def save_params(self):
@@ -197,12 +194,16 @@ class AdamW(Optimizer):
                 and returns the loss.
         """
         self._cuda_graph_capture_health_check()
-
         self.inner_iter += 1
-        if self.inner_iter == self.progressive_iter + 1:
-            trainable_params=self.update_params(self.threshold * self.iterative_weight)
-            super(AdamW, self).__init__(trainable_params, self.defaults)
 
+        if self.inner_iter == self.progressive_iter + 1:
+            with torch.enable_grad():
+                trainable_params=self.update_params(self.threshold)
+                super(AdamW, self).__init__(trainable_params, self.defaults)
+                for i, param in enumerate(self.source_params):
+                    value = Sparse.apply(param.detach(), trainable_params[i].abs(), self.param_mask_groups_adaptive[i])
+                    set_nested_attr(self.model, self.names[i], value)
+            return None
         if self.inner_iter <= self.progressive_iter:
             current_mask = self.param_mask_groups
         else:
@@ -214,8 +215,6 @@ class AdamW(Optimizer):
                 param=self.source_params[random_id]
                 mask=current_mask[random_id]
                 rank_loss=self.lambda_rank*self.nuclear_norm(param*mask)
-                if self.inner_iter%100==0:
-                    print(random_id,self.lambda_rank,param.shape,rank_loss/self.lambda_rank)
                 rank_loss.backward()
 
 
@@ -281,7 +280,8 @@ class AdamW(Optimizer):
                   maximize=group['maximize'],
                   foreach=group['foreach'],
                   capturable=group['capturable'],
-                  param_mask_groups=self.param_mask_groups)
+                  param_mask_groups=current_mask)
+
 
         return loss
 

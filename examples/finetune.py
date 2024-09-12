@@ -113,10 +113,10 @@ def parse_args():
         help="1.5,2.0,3.0",
     )
     parser.add_argument(
-        "--use_ub",
-        default=True,
+        "--disable_ub",
+        action='store_true',
         help=(
-            "Whether to use the unstructural backpropagation"
+            "Whether to use the unstructural backpropagation."
         ),
     )
     parser.add_argument(
@@ -461,6 +461,7 @@ DATASET_NAME_MAPPING = {
 
 def main():
     args = parse_args()
+
     if args.report_to == "wandb" and args.hub_token is not None:
         raise ValueError(
             "You cannot use both --report_to=wandb and --hub_token due to a security risk of exposing your token."
@@ -587,7 +588,7 @@ def main():
             eps=args.adam_epsilon
         )
     else:
-        if args.use_ub:
+        if not args.disable_ub:
             import optim.adamw
             optimizer_cls = optim.adamw.AdamW
             optimizer = optimizer_cls(
@@ -595,7 +596,7 @@ def main():
                 betas=(args.adam_beta1, args.adam_beta2),
                 weight_decay=args.adam_weight_decay,
                 eps=args.adam_epsilon,
-                threshhold=args.threshold,
+                threshold=args.threshold,
                 progressive_iter=args.progressive_iter,
                 lambda_rank=args.lambda_rank,
             )
@@ -607,7 +608,7 @@ def main():
                 betas=(args.adam_beta1, args.adam_beta2),
                 weight_decay=args.adam_weight_decay,
                 eps=args.adam_epsilon,
-                threshhold=args.threshold,
+                threshold=args.threshold,
                 progressive_iter=args.progressive_iter,
                 lambda_rank=args.lambda_rank,
             )

@@ -72,13 +72,13 @@ class AdamW(Optimizer):
         https://openreview.net/forum?id=ryQu7f-RZ
     """
 
-    def __init__(self, params, lr=None, betas=(0.9, 0.999), eps=1e-8,threshhold=1e-3,progressive_iter=-1,
+    def __init__(self, params, lr=None, betas=(0.9, 0.999), eps=1e-8,threshold=1e-3,progressive_iter=-1,
                  lambda_rank=0,
                  weight_decay=1e-2, amsgrad=False, *, maximize: bool = False,
                  foreach: Optional[bool] = None,
                  capturable: bool = False):
         if lr is None:
-            lr=1e-3*math.exp(-350*threshhold)
+            lr=1e-3*math.exp(-350*threshold)
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -89,7 +89,7 @@ class AdamW(Optimizer):
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
         if not 0.0 <= weight_decay:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
-        self.threshold=threshhold
+        self.threshold=threshold
 
         self.initial_lr=lr
         self.lambda_rank=lambda_rank
@@ -102,7 +102,7 @@ class AdamW(Optimizer):
         self.inner_iter = 0
         self.param_mask_groups_adaptive = None
         self.low_rank_ids = []
-        self.param_mask_groups=self.set_mask_param(threshhold)
+        self.param_mask_groups=self.set_mask_param(threshold)
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -118,15 +118,15 @@ class AdamW(Optimizer):
                 s['step'] = torch.tensor(float(s['step']))
     @torch.no_grad()
     def update_mask(self):
-        self.param_mask_groups_adaptive=self.set_mask_param(self.threshhold)
+        self.param_mask_groups_adaptive=self.set_mask_param(self.threshold)
         for idx in range(len(self.param_mask_groups_adaptive)):
             self.param_mask_groups_adaptive[idx]=self.param_mask_groups_adaptive[idx]*self.param_mask_groups[idx]
 
     @torch.no_grad()
-    def set_mask_param(self, threshhold):
+    def set_mask_param(self, threshold):
         param_mask_groups = []
         for idx,param in enumerate(self.param_groups[0]['params']):
-            param_mask_groups.append((param.abs()<threshhold).int().requires_grad_(False))
+            param_mask_groups.append((param.abs()<threshold).int().requires_grad_(False))
             if self.inner_iter==0:   #log only when the starting iteration
                 if len(param.shape)==2 and min(param.shape)>64:
                     self.low_rank_ids.append(idx)
