@@ -4,7 +4,6 @@ from torch import Tensor
 from torch.optim.optimizer import Optimizer
 from typing import List, Optional
 import random
-#显存优化的optimizer，并且同时实现adaptive
 
 __all__ = ['AdamW', 'adamw']
 class Sparse(torch.autograd.Function):
@@ -15,7 +14,6 @@ class Sparse(torch.autograd.Function):
         param1[mask] = param2
         return param1
 
-    #反向传播逻辑
     @staticmethod
     def backward(ctx, grad_param1):
         mask, = ctx.saved_tensors
@@ -133,12 +131,9 @@ class AdamW(Optimizer):
 
     def convert_parameters_to_tensors(self,module):
         for name, param in module.named_parameters(recurse=False):
-            # 将 nn.Parameter 转换为 torch.Tensor=
-            tensor = param.detach().requires_grad_(True).to(param.device)  # 使用 detach() 方法获取 tensor
+            tensor = param.detach().requires_grad_(True).to(param.device)
             module._parameters[name] = tensor
-            # setattr(module, name, tensor)
 
-        # 递归遍历所有子模块
         for child_name, child_module in module.named_children():
             self.convert_parameters_to_tensors(child_module)
     def __setstate__(self, state):
@@ -194,7 +189,7 @@ class AdamW(Optimizer):
         return nuclear_norm
 
     @torch.no_grad()
-    def step(self, closure=None,unet_param=None):
+    def step(self, closure=None):
         """Performs a single optimization step.
 
         Args:
@@ -373,9 +368,6 @@ def _single_tensor_adamw(params: List[Tensor],
                          param_mask_groups=None,
                          model=None):
     for i, param in enumerate(params):
-        # if i<3:
-        #     print(i,params[i].mean())
-        # ori_param = param.data.clone()
         grad = grads[i] if not maximize else -grads[i]
         exp_avg = exp_avgs[i]
         exp_avg_sq = exp_avg_sqs[i]
