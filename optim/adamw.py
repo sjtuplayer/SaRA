@@ -96,6 +96,8 @@ class AdamW(Optimizer):
                  weight_decay=1e-2, amsgrad=False, *, maximize: bool = False,
                  foreach: Optional[bool] = None,
                  capturable: bool = False):
+        if lr is None:
+            lr=1e-3*math.exp(-350*threshhold)
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -110,8 +112,6 @@ class AdamW(Optimizer):
                         weight_decay=weight_decay, amsgrad=amsgrad,
                         foreach=foreach, maximize=maximize, capturable=capturable)
         params=list(model.parameters())
-        if lr is None:
-            lr=1e-3*math.exp(-350*threshhold)
         self.names=[]
         for name, module in model.named_parameters():
             self.names.append(name)

@@ -1,5 +1,5 @@
-# SaRA: High-Efficient Diffusion Model Fine-tuning with Progressive Sparse Low-Rank Adaptation}
-###  [Paper](https://arxiv.org/abs/2404.15789)
+# SaRA: High-Efficient Diffusion Model Fine-tuning with Progressive Sparse Low-Rank Adaptation
+###  [Paper](https://export.arxiv.org/pdf/2409.06633) | [Project Page](https://sjtuplayer.github.io/projects/SaRA/)
 <!-- <br> -->
 [Teng Hu](https://github.com/sjtuplayer), 
 [Jiangning Zhang](https://zhangzjn.github.io/),
@@ -35,7 +35,8 @@ model.save()
 ```
 
 #### 🚀 Save and load only the trainable parameters
-If you want to save only the trainable parameters, you can use ```optimizer.save_params()```, which can save only the fien-tuned parameters (e.g, 5M, 10M parameters).
+If you want to save only the trainable parameters, you can use ```optimizer.save_params()```, 
+which can save only the fien-tuned parameters (e.g, 5M, 10M parameters), rather than the whole model.
 ```
 optimizer = adamw(model,threshold=2e-3)
 optimizer.load($path_to_save)
@@ -47,7 +48,7 @@ torch.save(optimizer.save_params(),$path_to_save)
 
 #### 📖 Datasets
 
-For the downstream dataset fine-tuning task, we employ five dataset, including BarbieCore, CyberPunk, ElementFire, Expedition, and Hornify([Google Drive](https://drive.google.com/file/d/1iaUUBX8TnvBLMenUMyxMya8O0Oa4BlU4/view?usp=drive_link)).
+For the downstream dataset fine-tuning task, we employ five dataset, including BarbieCore, CyberPunk, ElementFire, Expedition, and Hornify ([Google Drive](https://drive.google.com/file/d/1iaUUBX8TnvBLMenUMyxMya8O0Oa4BlU4/view?usp=drive_link)).
 Each dataset is structured as:
 ```
 dataset_name
@@ -60,42 +61,27 @@ where ```metadata.jsonl``` contains the prompts (captioned by BLIP) for each ima
 
 
 #### 🚀Fine-tuning on downstream dataset
-Put the downloaded datasets in ```Example/dataset```
+Put the downloaded datasets in ```examples/dataset```, and then run:
 
 ```
-cd Examples
+cd examples
 python3 finetune.py \
    --config=configs/Barbie.json \
    --output_dir=$path_to_save \
    --sd_version=1.5 \
    --threshold=2e-3 \
    --lr_scheduler=cosine \
-   --progresive_iter=2500 \
+   --progressive_iter=2500 \
    --lambda_rank=0.0005\
 ```
+
+Or you can just run ```bash finetune.sh```.
 
 #### 🚀Fine-tuning Dreambooth
 
-```
-python3 finetune.py \
-   --config=configs/Barbie.json \
-   --output_dir=$path_to_save \
-   --sd_version=1.5 \
-   --threshold=2e-3 \
-   --lr_scheduler=cosine \
-   --progresive_iter=2500 \
-   --lambda_rank=0.0005\
-```
+Coming Soon
 
 #### 🚀Fine-tuning Animatediff
 
-```
-python3 finetune.py \
-   --config=configs/Barbie.json \
-   --output_dir=$path_to_save \
-   --sd_version=1.5 \
-   --threshold=2e-3 \
-   --lr_scheduler=cosine \
-   --progresive_iter=2500 \
-   --lambda_rank=0.0005\
-```
+Coming Soon
+

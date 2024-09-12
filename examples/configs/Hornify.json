@@ -1,7 +1,6 @@
 {
     "dataset_name": "/dev/shm/tmp/dataset/dataset/Lora-dataset/Hornify",
     "prefix_name": "Hornify style, ",
-    "train_batch_size": 4,
     "validation_iter": 500,
     "max_train_steps": 5005,
     "checkpointing_steps":500

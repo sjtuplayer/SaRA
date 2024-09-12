@@ -13,7 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Fine-tuning script for Stable Diffusion for text2image with support for LoRA."""
-
+import sys
+sys.path.append('./')
+sys.path.append('../')
 import argparse
 import itertools
 import json
@@ -22,7 +24,6 @@ import math
 import os
 import random
 from pathlib import Path
-from utils.draw import plot_histogram
 import datasets
 import numpy as np
 import torch
@@ -99,9 +100,11 @@ def parse_args():
     parser.add_argument(
         "--pretrained_model_name_or_path",
         type=str,
-        default='checkpoints/models/models--runwayml--stable-diffusion-v1-5/snapshots/1d0c4ebf6ff58a5caecab40fa1406526bca4b5b9',
+        default='stabilityai/stable-diffusion-2',
         #default=None,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
+        #"stabilityai/stable-diffusion-2"
+        #"CompVis/stable-diffusion-v1-4"
     )
     parser.add_argument(
         "--sd_version",
@@ -110,19 +113,18 @@ def parse_args():
         help="1.5,2.0,3.0",
     )
     parser.add_argument(
-        "--log_gradient",
-        default=False,
-        action="store_true",
+        "--use_ub",
+        default=True,
         help=(
-            "Whether to log the change of the gradients of the initial minimum params"
+            "Whether to use the unstructural backpropagation"
         ),
     )
     parser.add_argument(
-        "--iterative_prune_iter",
+        "--progressive_iter",
         default=-1,
         type=int,
         help=(
-            "Whether to find the minimal parameters iteratively"
+            "The progressive iteration for re-selecting the trainable parameters"
         ),
     )
     parser.add_argument(
@@ -142,6 +144,9 @@ def parse_args():
         "--lambda_rank",
         default=0,
         type=float,
+        help=(
+            "Weight for low-rank loss"
+        ),
     )
     parser.add_argument(
         "--revision",
@@ -151,15 +156,9 @@ def parse_args():
         help="Revision of pretrained model identifier from huggingface.co/models.",
     )
     parser.add_argument(
-        "--train_all_params", action="store_true", help="Whether or not to use 8-bit Adam from bitsandbytes."
-    )
-    parser.add_argument(
-        "--train_prune_params", action="store_true", help="Whether or not to use 8-bit Adam from bitsandbytes."
-    )
-    parser.add_argument(
         "--dataset_name",
         type=str,
-        default='./shared_memory/dataset/dehualiu',
+        default='default',
         help=(
             "The name of the Dataset (from the HuggingFace hub) to train on (could be your own, possibly private,"
             " dataset). It can also be a path pointing to a local copy of a dataset in your filesystem,"
@@ -442,10 +441,7 @@ def parse_args():
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
         args.local_rank = env_local_rank
-    if args.sd_version=='1.5':
-        args.pretrained_model_name_or_path='checkpoints/models/models--runwayml--stable-diffusion-v1-5/snapshots/1d0c4ebf6ff58a5caecab40fa1406526bca4b5b9'
-    if args.sd_version=='2.0':
-        args.pretrained_model_name_or_path = 'checkpoints/models/models--stabilityai--stable-diffusion-2/snapshots/1e128c8891e52218b74cde8f26dbfc701cb99d79/'
+
     config = load_config(args.config)
     update_args_from_config(args, config)
 
@@ -459,7 +455,7 @@ def parse_args():
 
 
 DATASET_NAME_MAPPING = {
-    "dataset/yuanshen": ("image", "text"),
+    "dataset/dataset_name": ("image", "text"),
 }
 
 
@@ -510,7 +506,6 @@ def main():
 
     # If passed along, set the training seed now.
     if args.seed is not None:
-        print('set seed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         set_seed(args.seed)
 
     # Handle the repository creation
@@ -522,16 +517,9 @@ def main():
             repo_id = create_repo(
                 repo_id=args.hub_model_id or Path(args.output_dir).name, exist_ok=True, token=args.hub_token
             ).repo_id
-    # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     print("accelerate device:", accelerator.device)
     # Load scheduler, tokenizer and models.
-    if args.sd_version=='1.5':
-        noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    if args.sd_version=='2.0':
-        print(args.pretrained_model_name_or_path)
-        noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path,
-                                                        subfolder="scheduler")
-
     tokenizer = CLIPTokenizer.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
     )
@@ -546,7 +534,7 @@ def main():
     unet = UNet2DConditionModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision
     )
-
+    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
     # For mixed precision training we cast the text_encoder and vae weights to half-precision
     # as these models are only used for inference, keeping weights in full precision is not required.
     weight_dtype = torch.float32
@@ -599,44 +587,30 @@ def main():
             eps=args.adam_epsilon
         )
     else:
-        import optim.utils.masked_adamw2_2
-        optimizer_cls = optim.utils.masked_adamw2_2.AdamW
-        # import optim.utils.masked_adamw4
-        # optimizer_cls = optim.utils.masked_adamw4.AdamW
-        optimizer = optimizer_cls(
-            unet.parameters(),
-            #unet,
-            lr=args.learning_rate,
-            betas=(args.adam_beta1, args.adam_beta2),
-            weight_decay=args.adam_weight_decay,
-            eps=args.adam_epsilon,
-            threshhold=args.threshold,
-            iterative_iter=args.iterative_prune_iter,
-            lambda_rank=args.lambda_rank,
-        )
-        #if accelerator.is_main_process and args.log_gradient:
-        # initial_params=[]
-        # for param in unet.parameters():
-        #     initial_params.append(param.detach().abs().flatten())
-        # initial_params = torch.cat(initial_params,dim=0)
-        # initial_min_indices = (initial_params < args.threshold).nonzero(as_tuple=True)[0]
-        # print('num of small params : %d' % len(initial_min_indices))
-    # optimizer_cls = torch.optim.AdamW  # fine-tune the full model
-    # optimizer = optimizer_cls(
-    #     unet.parameters(),
-    #     lr=args.learning_rate,
-    #     betas=(args.adam_beta1, args.adam_beta2),
-    #     weight_decay=args.adam_weight_decay,
-    #     eps=args.adam_epsilon
-    #)
-    # optimizer = optimizer_cls(
-    #     unet.parameters(),
-    #     lr=args.learning_rate,
-    #     betas=(args.adam_beta1, args.adam_beta2),
-    #     weight_decay=args.adam_weight_decay,
-    #     eps=args.adam_epsilon,
-    #     threshhold=0.0001
-    # )
+        if args.use_ub:
+            import optim.adamw
+            optimizer_cls = optim.adamw.AdamW
+            optimizer = optimizer_cls(
+                unet,
+                betas=(args.adam_beta1, args.adam_beta2),
+                weight_decay=args.adam_weight_decay,
+                eps=args.adam_epsilon,
+                threshhold=args.threshold,
+                progressive_iter=args.progressive_iter,
+                lambda_rank=args.lambda_rank,
+            )
+        else:
+            import optim.adamw2
+            optimizer_cls = optim.adamw2.AdamW
+            optimizer = optimizer_cls(
+                unet.parameters(),
+                betas=(args.adam_beta1, args.adam_beta2),
+                weight_decay=args.adam_weight_decay,
+                eps=args.adam_epsilon,
+                threshhold=args.threshold,
+                progressive_iter=args.progressive_iter,
+                lambda_rank=args.lambda_rank,
+            )
 
     # Get the datasets: you can either provide your own training and evaluation files (see below)
     # or specify a Dataset from the hub (the dataset will be downloaded automatically from the datasets Hub).
@@ -748,7 +722,6 @@ def main():
     if args.max_train_steps is None:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
-    print(args.max_train_steps * accelerator.num_processes,args.max_train_steps,args.learning_rate,'===================================================')
     lr_scheduler = get_scheduler(
         args.lr_scheduler,
         optimizer=optimizer,
@@ -821,23 +794,13 @@ def main():
             text_encoder.train()
         train_loss = 0.0
         for step, batch in enumerate(train_dataloader):
+            if global_step >= args.max_train_steps:
+                break
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-            # if global_step==15:
-            #     import time
-            #     s0=time.time()
-            # if global_step==40:
-            #     allocated_memory = torch.cuda.memory_allocated()
-            #     max_allocated_memory=torch.cuda.max_memory_allocated()
-            #     s1=time.time()
-            #     import csv
-            #     with open('save_files/resources.csv', mode='a', newline='') as file:
-            #         writer = csv.writer(file)
-            #         writer.writerow([f'ltdft-bs{args.train_batch_size}',(s1-s0)*200,allocated_memory,max_allocated_memory])
-            #         exit()
             with accelerator.accumulate(unet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -867,13 +830,8 @@ def main():
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
 
-                # logger.info("noisy_latents",noisy_latents.device)
-                # logger.info("encoder_hidden_states",encoder_hidden_states.device)
-                # logger.info("timesteps",timesteps.device)
-                # Predict the noise residual and compute loss
                 model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
-                # print(global_step, float(loss),timesteps,noisy_latents.mean())
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss.item() / args.gradient_accumulation_steps
@@ -885,63 +843,6 @@ def main():
                     accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
-                if accelerator.is_main_process:
-                    with torch.no_grad():
-                        # if args.log_gradient and global_step % 1 == 0:
-                        #     all_gradients = []
-                        #     for param in unet.parameters():
-                        #         all_gradients.append(param.grad.view(-1))
-                        #     all_gradients = torch.cat(all_gradients, dim=0)
-                        #     smallest_param_gradients=all_gradients[initial_min_indices]
-                        #     plot_histogram(smallest_param_gradients,'tmp/%d.png'%global_step)
-                        #     print(len(all_gradients),len(smallest_param_gradients))
-                        #     if global_step==0:
-                        #         plot_histogram(all_gradients,'tmp/-1.png')
-                        if args.log_gradient and global_step % 10 == 0:
-                            all_params=[]
-                            for param in unet.parameters():
-                                #all_gradients.append(param.grad.view(-1).abs())
-                                all_params.append(param.view(-1).abs())
-                            all_params=torch.cat(all_params,dim=0)
-                            learned_params=all_params[initial_min_indices]
-                            num=(learned_params<args.threshold).int().sum()
-                            num2 = (learned_params < args.threshold*2).int().sum()
-                            print(global_step,"num of params smaller than threshold",num,num/len(initial_min_indices),num2/len(initial_min_indices))
-                            # all_gradients = torch.cat(all_gradients, dim=0)
-                            # all_params=torch.cat(all_params,dim=0)
-                            # num_params = len(all_gradients)
-                            # k_min = max(1, int(0.01 * num_params))
-                            # min_grads_1, _ = torch.topk(all_gradients, k_min, largest=True)    #最大的k%
-                            # min_params_1, _ = torch.topk(all_params, k_min, largest=False)    #最小的k%
-                            #
-                            # k_min = max(1, int(0.05 * num_params))
-                            # min_grads_2, _ = torch.topk(all_gradients, k_min, largest=True)
-                            # min_params_2, _ = torch.topk(all_params, k_min, largest=False)
-                            #
-                            # k_min = max(1, int(0.1 * num_params))
-                            # min_grads_3, _ = torch.topk(all_gradients, k_min, largest=True)
-                            # min_params_3, _ = torch.topk(all_params, k_min, largest=False)
-                            #
-                            # min_gradients = all_gradients[initial_min_indices]
-                            # min_params=all_params[initial_min_indices]
-                            #
-                            # p1 = (min_gradients > min_grads_1[-1]).sum() / len(initial_min_indices)
-                            # p2 = (min_gradients > min_grads_2[-1]).sum() / len(initial_min_indices)
-                            # p3 = (min_gradients > min_grads_3[-1]).sum() / len(initial_min_indices)
-                            # #print("%.8f,%.8f,%.8f" % (p1, p2, p3))
-                            # print(len(initial_min_indices),len(initial_min_indices)/len(all_params))
-                            # print("%.8f,%.8f,%.8f,%.8f" % (p1, p2, p3, (
-                            #             all_params[initial_min_indices] > args.threshold).int().sum() / len(
-                            #     initial_min_indices)))    #原本的最小参数在训练过程中占整体大k%梯度的比例
-                            # p1 = (min_params > min_params_1[-1]).sum() / len(initial_min_indices)
-                            # p2 = (min_params > min_params_2[-1]).sum() / len(initial_min_indices)
-                            # p3 = (min_params > min_params_3[-1]).sum() / len(initial_min_indices)
-                            # #print(min_params.max(),min_params.mean(),min_params_1[-1],min_params_2[-1],min_params_3[-1])
-                            # print("%.8f,%.8f,%.8f,%.8f" % (p1, p2, p3, (
-                            #             all_params[initial_min_indices] > args.threshold).int().sum() / len(
-                            #     initial_min_indices)))     #原本的最小参数在训练过程中占整体最小k%的比例
-
-
                 optimizer.zero_grad()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
@@ -951,116 +852,52 @@ def main():
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
-                # if (global_step % args.checkpointing_steps == 0 and global_step!=0) or (global_step==10000 and not args.log_gradient):
-                if global_step ==5000  or global_step==args.iterative_prune_iter or global_step==1:
+                if (global_step %args.checkpointing_steps==0 and global_step!=0) or global_step==1:
                     if accelerator.is_main_process:
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-                        #accelerator.save_state(save_path)
                         os.makedirs(save_path,exist_ok=True)
                         torch.save(optimizer.optimizer.save_params(),os.path.join(save_path,'unet.pt'))
                         logger.info(f"Saved state to {save_path}")
-                # if args.iterative_prune_iter > 0 and global_step % args.iterative_prune_iter==0 and accelerator.is_main_process:
-                #     optimizer = optimizer_cls(
-                #         unet.parameters(),
-                #         lr=args.learning_rate,
-                #         betas=(args.adam_beta1, args.adam_beta2),
-                #         weight_decay=args.adam_weight_decay,
-                #         eps=args.adam_epsilon,
-                #         threshhold=args.threshold
-                #     )
-                #     optimizer=accelerator.prepare(optimizer)
-                #     initial_params = []
-                #     for param in unet.parameters():
-                #         initial_params.append(param.detach().abs().flatten())
-                #     initial_params = torch.cat(initial_params, dim=0)
-                #     initial_min_indices = (initial_params < args.threshold).nonzero(as_tuple=True)[0]
-                #     print('num of small params : %d'%len(initial_min_indices))
+
             logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
-            # if global_step%500==0 and global_step!=0:
-            #     os.system('python inference.py --name=%s --iter=%d'%(args.output_dir,global_step))
-            if global_step >= args.max_train_steps:
-                break
-            # print(args.validation_prompt,global_step,args.validation_iter)
             if accelerator.is_main_process:
-                if args.validation_prompt is not None and (global_step % args.validation_iter == 0 or (global_step==10000 and not args.log_gradient)):
-
+                if args.validation_prompt is not None and (global_step % args.validation_iter == 0 or global_step==1):
                     logger.info(
                         f"Running validation... \n Generating {args.num_validation_images} images with prompt:"
                         f" {args.validation_prompt}."
                     )
-                    # create pipeline
-                    # pipeline = DiffusionPipeline.from_pretrained(
-                    #     args.pretrained_model_name_or_path,
-                    #     unet=accelerator.unwrap_model(unet),
-                    #     text_encoder=accelerator.unwrap_model(text_encoder),
-                    #     revision=args.revision,
-                    #     torch_dtype=weight_dtype,
-                    #     safety_checker=None
-                    # )
-                    # pipeline = pipeline.to(accelerator.device)
-                    # pipeline.set_progress_bar_config(disable=True)
-                    # # run inference
-                    # generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
-                    # images = []
-                    # transform = transforms.ToTensor()
-                    # for _ in range(args.num_validation_images):
-                    #     image=pipeline(args.validation_prompt, num_inference_steps=30, generator=generator,
-                    #                  safety_checker=None, requires_safety_checker=False
-                    #                  ).images[0]
-                    #     images.append(transform(image))
-                    # for _ in range(args.num_validation_images):
-                    #     image=pipeline(args.prefix_name+args.validation_prompt, num_inference_steps=30, generator=generator,
-                    #                  safety_checker=None, requires_safety_checker=False
-                    #                  ).images[0]
-                    #     images.append(transform(image))
-                    # images = torch.stack(images, dim=0).cpu()
-                    # save_image(images, '%s/%d.jpg' % (args.output_dir, global_step), nrow=4)
-                    # print("saved to the path %s/%d" % (args.output_dir, global_step))
-                    # del pipeline
-                    # torch.cuda.empty_cache()
+                    pipeline = DiffusionPipeline.from_pretrained(
+                        args.pretrained_model_name_or_path,
+                        unet=accelerator.unwrap_model(unet),
+                        text_encoder=accelerator.unwrap_model(text_encoder),
+                        revision=args.revision,
+                        torch_dtype=weight_dtype,
+                        safety_checker=None
+                    )
+                    pipeline = pipeline.to(accelerator.device)
+                    pipeline.set_progress_bar_config(disable=True)
+                    # run inference
+                    generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
+                    images = []
+                    transform = transforms.ToTensor()
+                    for _ in range(args.num_validation_images):
+                        image=pipeline(args.validation_prompt, num_inference_steps=30, generator=generator,
+                                     safety_checker=None, requires_safety_checker=False
+                                     ).images[0]
+                        images.append(transform(image))
+                    for _ in range(args.num_validation_images):
+                        image=pipeline(args.prefix_name+args.validation_prompt, num_inference_steps=30, generator=generator,
+                                     safety_checker=None, requires_safety_checker=False
+                                     ).images[0]
+                        images.append(transform(image))
+                    images = torch.stack(images, dim=0).cpu()
+                    save_image(images, '%s/%d.jpg' % (args.output_dir, global_step), nrow=4)
+                    print("saved to the path %s/%d" % (args.output_dir, global_step))
+                    del pipeline
+                    torch.cuda.empty_cache()
 
-    # Save the lora layers
     accelerator.wait_for_everyone()
-    # if accelerator.is_main_process:
-    #     unet = unet.to(torch.float32)
-    #     torch.save(unet.state_dict(),args.output_dir+'/unet.pth')
-    # unet.save_attn_procs(args.output_dir)
-
-    # Final inference
-    # Load previous pipeline
-    pipeline = DiffusionPipeline.from_pretrained(
-        args.pretrained_model_name_or_path, revision=args.revision, torch_dtype=weight_dtype
-    )
-
-    pipeline = pipeline.to(accelerator.device)
-    # load attention processors
-    pipeline.unet.load_state_dict(torch.load(args.output_dir + '/unet.pth'))
-
-    # run inference
-    if args.seed is not None:
-        generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
-    else:
-        generator = None
-    images = []
-    for _ in range(args.num_validation_images):
-        images.append(pipeline(args.validation_prompt, num_inference_steps=30, generator=generator).images[0])
-
-    if accelerator.is_main_process:
-        for tracker in accelerator.trackers:
-            if tracker.name == "tensorboard":
-                np_images = np.stack([np.asarray(img) for img in images])
-                tracker.writer.add_images("test", np_images, epoch, dataformats="NHWC")
-            if tracker.name == "wandb":
-                tracker.log(
-                    {
-                        "test": [
-                            wandb.Image(image, caption=f"{i}: {args.validation_prompt}")
-                            for i, image in enumerate(images)
-                        ]
-                    }
-                )
-
     accelerator.end_training()
 
 

@@ -1,0 +1,8 @@
+accelerate==0.34.2
+datasets
+omegaconf
+sentencepiece
+peft
+jsonlines
+diffusers==0.30.2
+torch==2.1.2
