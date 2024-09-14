@@ -853,7 +853,7 @@ def main():
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
-                if (global_step %args.checkpointing_steps==0 and global_step!=0) or global_step==1:
+                if global_step %args.checkpointing_steps==0 and global_step!=0:
                     if accelerator.is_main_process:
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         os.makedirs(save_path,exist_ok=True)
@@ -863,7 +863,7 @@ def main():
             logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
             if accelerator.is_main_process:
-                if args.validation_prompt is not None and (global_step % args.validation_iter == 0 or global_step==1):
+                if args.validation_prompt is not None and (global_step % args.validation_iter == 0):
                     logger.info(
                         f"Running validation... \n Generating {args.num_validation_images} images with prompt:"
                         f" {args.validation_prompt}."

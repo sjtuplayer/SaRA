@@ -126,7 +126,8 @@ class AdamW(Optimizer):
     def set_mask_param(self, threshold):
         param_mask_groups = []
         for idx,param in enumerate(self.param_groups[0]['params']):
-            param_mask_groups.append((param.abs()<threshold).int().requires_grad_(False))
+            #param_mask_groups.append((param.abs()<threshold).int().requires_grad_(False))
+            param_mask_groups.append((param.abs() < threshold).bool().requires_grad_(False))
             if self.inner_iter==0:   #log only when the starting iteration
                 if len(param.shape)==2 and min(param.shape)>64:
                     self.low_rank_ids.append(idx)
@@ -318,7 +319,7 @@ def _single_tensor_adamw(params: List[Tensor],
                          param_mask_groups=None):
 
     for i, param in enumerate(params):
-        mask_param = param_mask_groups[i]
+        mask_param = param_mask_groups[i].int()
         ori_param = param.data.clone()
         grad = grads[i] if not maximize else -grads[i]
         exp_avg = exp_avgs[i]
