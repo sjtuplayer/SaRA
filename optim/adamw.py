@@ -169,6 +169,7 @@ class AdamW(Optimizer):
 
     def save_params(self):
         save_params={}
+        save_params['threshold']=self.threshold
         for idx, param in enumerate(self.model.parameters()):
             save_params[idx]=param[self.param_mask_groups[idx].bool()]
         return save_params

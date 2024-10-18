@@ -101,16 +101,9 @@ def parse_args():
         "--pretrained_model_name_or_path",
         type=str,
         default='stabilityai/stable-diffusion-2',
-        #default=None,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
         #"stabilityai/stable-diffusion-2"
         #"CompVis/stable-diffusion-v1-4"
-    )
-    parser.add_argument(
-        "--sd_version",
-        type=str,
-        default='1.5',
-        help="1.5,2.0,3.0",
     )
     parser.add_argument(
         "--disable_ub",

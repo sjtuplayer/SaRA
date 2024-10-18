@@ -77,6 +77,7 @@ python3 finetune.py \
 
 Or you can just run ```bash finetune.sh```.
 
+
 #### 🚀Fine-tuning Dreambooth
 
 Coming Soon
@@ -85,3 +86,32 @@ Coming Soon
 
 Coming Soon
 
+### 🍺Evaluation
+
+#### 🚀Generate images with fine-tuned model
+After fine-tuning the model on the downstream dataset by SaRA, you can generate the images by:
+```
+cd examples
+python3 inference.py --config=configs/Barbie.json --sara_path=$path_to_the_saved_sara_checkpoints --threshold=2e-3
+```
+where ```--threshold``` is optional for the updated version of SaRA.
+
+#### 🚀Evaluate the generated results
+You can evaluate the CLIP Score and FID by:
+```
+cd evaluation
+python3 evaluation.py --target_dir=$path_to_the_generated_image_folder --config=../examples/configs/Barbie.json
+```
+
+## Citation
+
+If you find this code helpful for your research, please cite:
+
+```
+@article{hu2024sara,
+  title={SaRA: High-Efficient Diffusion Model Fine-tuning with Progressive Sparse Low-Rank Adaptation},
+  author={Hu, Teng and Zhang, Jiangning and Yi, Ran and Huang, Hongrui and Wang, Yabiao and Ma, Lizhuang},
+  journal={arXiv preprint arXiv:2409.06633},
+  year={2024}
+}
+```

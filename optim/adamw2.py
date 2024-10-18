@@ -136,6 +136,7 @@ class AdamW(Optimizer):
     @torch.no_grad()
     def save_params(self):
         save_params={}
+        save_params['threshold'] = self.threshold
         for idx,param in enumerate(self.param_groups[0]['params']):
             save_params[idx]=param[self.param_mask_groups[idx].bool()]
         return save_params
